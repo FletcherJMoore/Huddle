@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planner Board</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Planning boards">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path d="M7 3h10a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z" />
+              <path d="M8 8h8M8 12h5M8 16h7" />
+            </svg>
+          </div>
+          <div>
+            <h1>Planner</h1>
+            <p>Boards for shared plans</p>
+          </div>
+        </div>
+
+        <form class="new-board" id="boardForm">
+          <label for="boardName">New board</label>
+          <div class="inline-form">
+            <input id="boardName" name="boardName" type="text" placeholder="Weekend games" maxlength="42" required />
+            <button type="submit" class="icon-button" aria-label="Create board" title="Create board">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          </div>
+        </form>
+
+        <section class="auth-box" aria-label="Account">
+          <div>
+            <strong id="authStatus">Local draft mode</strong>
+            <span id="authDetail">Add Firebase config to sync boards.</span>
+          </div>
+          <div class="auth-actions">
+            <button class="text-button subtle" id="guestSignInButton" type="button">Guest</button>
+            <button class="text-button subtle" id="googleSignInButton" type="button">Google</button>
+            <button class="text-button subtle hidden" id="signOutButton" type="button">Sign out</button>
+          </div>
+        </section>
+
+        <nav class="board-list" id="boardList" aria-label="Board list"></nav>
+      </aside>
+
+      <main class="workspace">
+        <section class="board-header">
+          <div>
+            <input class="board-title" id="activeBoardName" aria-label="Board name" maxlength="48" />
+            <div class="board-meta" id="boardMeta"></div>
+          </div>
+          <div class="header-actions">
+            <button class="text-button subtle" id="seedButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 19V5m0 0h11l1 4h4v8H4" />
+              </svg>
+              Sample
+            </button>
+            <button class="icon-button danger" id="deleteBoardButton" type="button" aria-label="Delete board" title="Delete board">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" />
+              </svg>
+            </button>
+          </div>
+        </section>
+
+        <section class="overview-band" aria-label="Board snapshot">
+          <div class="snapshot-card accent-a">
+            <span>Next up</span>
+            <strong id="nextEvent">No scheduled times</strong>
+          </div>
+          <div class="snapshot-card accent-b">
+            <span>Top activity</span>
+            <strong id="topActivity">No votes yet</strong>
+          </div>
+          <div class="snapshot-card accent-c">
+            <span>People</span>
+            <strong id="peopleCount">0 members</strong>
+          </div>
+        </section>
+
+        <section class="board-grid">
+          <div class="panel schedule-panel">
+            <div class="panel-heading">
+              <h2>Schedule</h2>
+              <button class="icon-button small" id="addTimeButton" type="button" aria-label="Add time" title="Add time">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+            </div>
+            <form class="entry-form hidden" id="timeForm">
+              <input id="timeDate" type="date" required />
+              <input id="timeStart" type="time" required />
+              <input id="timeEnd" type="time" required />
+              <input id="timeActivity" type="text" placeholder="Activity" maxlength="60" required />
+              <button type="submit">Add</button>
+            </form>
+            <div class="item-list" id="scheduleList"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <h2>Activities</h2>
+              <button class="icon-button small" id="addActivityButton" type="button" aria-label="Add activity" title="Add activity">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+            </div>
+            <form class="entry-form hidden" id="activityForm">
+              <input id="activityName" type="text" placeholder="Game, movie, errand..." maxlength="64" required />
+              <select id="activityType" aria-label="Activity type">
+                <option>Game</option>
+                <option>Watch</option>
+                <option>Trip</option>
+                <option>Task</option>
+                <option>Other</option>
+              </select>
+              <button type="submit">Add</button>
+            </form>
+            <div class="item-list" id="activityList"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <h2>People</h2>
+              <button class="icon-button small" id="addPersonButton" type="button" aria-label="Add person" title="Add person">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+            </div>
+            <form class="entry-form hidden" id="personForm">
+              <input id="personName" type="text" placeholder="Name" maxlength="40" required />
+              <input id="personStatus" type="text" placeholder="Availability" maxlength="48" />
+              <button type="submit">Add</button>
+            </form>
+            <div class="item-list" id="peopleList"></div>
+          </div>
+
+          <div class="panel chat-panel">
+            <div class="panel-heading">
+              <h2>Chat</h2>
+              <button class="icon-button small" id="clearChatButton" type="button" aria-label="Clear chat" title="Clear chat">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m4 7 16 0M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                </svg>
+              </button>
+            </div>
+            <div class="chat-log" id="chatLog"></div>
+            <form class="chat-form" id="chatForm">
+              <input id="chatAuthor" type="text" placeholder="Name" maxlength="28" required />
+              <input id="chatMessage" type="text" placeholder="Message" maxlength="180" required />
+              <button class="icon-button" type="submit" aria-label="Send message" title="Send message">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m4 12 16-8-5 16-3-7-8-1Z" />
+                </svg>
+              </button>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="emptyTemplate">
+      <div class="empty-state">
+        <div class="empty-art" aria-hidden="true"></div>
+        <p></p>
+      </div>
+    </template>
+
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
