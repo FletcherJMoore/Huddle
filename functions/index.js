@@ -152,6 +152,64 @@ exports.sendInviteEmail = onValueCreated(
   }
 );
 
+// Web push: when a chat message is posted, notify the board's other members on
+// any devices they've enrolled (fcmTokens/{uid}/{token}). Data-only payload —
+// the service worker renders the notification. Skips system messages.
+exports.notifyNewMessage = onValueCreated(
+  { ref: "/boards/{boardId}/messages/{messageId}", region: "us-central1" },
+  async (event) => {
+    const msg = event.data.val();
+    if (!msg || !msg.authorUid || !msg.text) return;
+
+    const boardId = event.params.boardId;
+    const db = admin.database();
+    const boardSnap = await db.ref(`boards/${boardId}`).get();
+    const board = boardSnap.val();
+    if (!board) return;
+
+    const recipients = Object.keys(board.members || {}).filter((uid) => uid !== msg.authorUid);
+    if (!recipients.length) return;
+
+    // Gather every recipient device token (tracking uid so we can prune bad ones).
+    const entries = [];
+    await Promise.all(
+      recipients.map(async (uid) => {
+        const snap = await db.ref(`fcmTokens/${uid}`).get();
+        Object.keys(snap.val() || {}).forEach((token) => entries.push({ uid, token }));
+      })
+    );
+    if (!entries.length) return;
+
+    const authorName = board.memberProfiles?.[msg.authorUid]?.name || msg.author || "Someone";
+    const body = msg.text.length > 120 ? `${msg.text.slice(0, 117)}…` : msg.text;
+
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens: entries.map((e) => e.token),
+      data: {
+        title: `${authorName} · ${board.name || "your huddle"}`,
+        body,
+        boardId,
+        url: process.env.APP_URL || "https://huddle-b73f3.web.app/"
+      }
+    });
+
+    // Remove tokens FCM reports as dead so they don't accumulate.
+    const removals = {};
+    response.responses.forEach((res, i) => {
+      if (res.success) return;
+      const code = res.error?.code || "";
+      if (
+        code.includes("registration-token-not-registered") ||
+        code.includes("invalid-argument") ||
+        code.includes("invalid-registration-token")
+      ) {
+        removals[`fcmTokens/${entries[i].uid}/${entries[i].token}`] = null;
+      }
+    });
+    if (Object.keys(removals).length) await db.ref().update(removals);
+  }
+);
+
 // ---------- Steam (Sign in through Steam + owned-games comparison) ----------
 
 const STEAM_OPENID = "https://steamcommunity.com/openid/login";

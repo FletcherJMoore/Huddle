@@ -5,10 +5,14 @@ import {
   currentProfile,
   avatarColor,
   memberIdsOf,
-  plainName
+  plainName,
+  profileFor,
+  unreadCount,
+  isOwnerOf,
+  canonicalRole
 } from "./board-model.js";
 import { initialsFor, formatShortDate, sortSchedule } from "../../utils/format.js";
-import { EMOJI_OPTIONS, ACCENT_OPTIONS } from "../../utils/constants.js";
+import { EMOJI_OPTIONS, ACCENT_OPTIONS, ROLE_LABELS, ASSIGNABLE_ROLES } from "../../utils/constants.js";
 import { deleteBoard } from "../../services/boards-repository.js";
 import { openModal, closeModal, openBoard, goDashboard, showToast } from "../shell/shell.js";
 
@@ -20,13 +24,6 @@ function avatarEl(seed, name, className) {
   el.textContent = initialsFor(name);
   el.title = name;
   return el;
-}
-
-function unreadCount(board) {
-  const msgs = board.messages ?? [];
-  if (!msgs.length) return 0;
-  const lastRead = board.reads?.[store.currentUser?.uid] ?? "";
-  return msgs.filter((m) => m.createdAt > lastRead && m.authorUid !== store.currentUser?.uid).length;
 }
 
 function counts(board) {
@@ -216,6 +213,7 @@ export function openCreateBoard() {
   elements.cbModalTitle.textContent = "New board";
   elements.cbSubmitButton.textContent = "Create board";
   elements.cbDeleteButton.classList.add("hidden");
+  elements.cbMembersSection.classList.add("hidden");
   renderCreatePickers();
   openModal("createBoard");
   setTimeout(() => elements.cbName.focus(), 50);
@@ -229,9 +227,108 @@ export function openEditBoard() {
   elements.cbName.value = board.name;
   elements.cbModalTitle.textContent = "Board settings";
   elements.cbSubmitButton.textContent = "Save changes";
-  elements.cbDeleteButton.classList.remove("hidden");
   renderCreatePickers();
+  renderBoardSettingsControls(board);
   openModal("createBoard");
+}
+
+// ---------- member manager (owner only) ----------
+function renderBoardSettingsControls(board) {
+  const owner = isOwnerOf(board);
+  elements.cbDeleteButton.classList.toggle("hidden", !owner);
+  elements.cbMembersSection.classList.toggle("hidden", !owner);
+  if (owner) renderMembers(board);
+  else elements.cbMembers.replaceChildren();
+}
+
+function renderMembers(board) {
+  elements.cbMembers.replaceChildren(...memberIdsOf(board).map((uid) => memberRow(board, uid)));
+}
+
+function memberRow(board, uid) {
+  const role = canonicalRole(board.members[uid]);
+  const isSelf = uid === store.currentUser?.uid;
+  const name = plainName(board, uid);
+
+  const row = document.createElement("div");
+  row.className = "member-row";
+  const meta = document.createElement("div");
+  meta.className = "member-meta";
+  const strong = document.createElement("strong");
+  strong.textContent = name + (isSelf ? " (you)" : "");
+  const email = document.createElement("span");
+  email.textContent = profileFor(board, uid)?.email || "";
+  meta.append(strong, email);
+  row.append(avatarEl(uid, name, "av"), meta);
+
+  const controls = document.createElement("div");
+  controls.className = "member-controls";
+
+  if (role === "owner") {
+    const badge = document.createElement("span");
+    badge.className = "member-owner-badge";
+    badge.textContent = "Owner";
+    controls.append(badge);
+  } else {
+    const select = document.createElement("select");
+    select.className = "role-select";
+    ASSIGNABLE_ROLES.forEach((r) => {
+      const opt = document.createElement("option");
+      opt.value = r;
+      opt.textContent = ROLE_LABELS[r];
+      if (r === role) opt.selected = true;
+      select.append(opt);
+    });
+    select.addEventListener("change", () => setMemberRole(board, uid, select.value));
+
+    const makeOwner = document.createElement("button");
+    makeOwner.type = "button";
+    makeOwner.className = "link-btn";
+    makeOwner.textContent = "Make owner";
+    makeOwner.addEventListener("click", () => transferOwnership(board, uid, name));
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "link-btn danger";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => removeMember(board, uid, name));
+
+    controls.append(select, makeOwner, remove);
+  }
+  row.append(controls);
+  return row;
+}
+
+function setMemberRole(board, uid, role) {
+  board.members[uid] = role;
+  saveState();
+  render();
+  showToast(`Updated ${plainName(board, uid)} to ${ROLE_LABELS[role]}`);
+}
+
+function removeMember(board, uid, name) {
+  if (!window.confirm(`Remove ${name} from "${board.name}"? They'll lose access to this board.`)) {
+    renderMembers(board);
+    return;
+  }
+  delete board.members[uid];
+  if (board.memberProfiles) delete board.memberProfiles[uid];
+  if (board.reads) delete board.reads[uid];
+  board.memberIds = Object.keys(board.members);
+  saveState();
+  renderMembers(board);
+  render();
+  showToast(`Removed ${name}`);
+}
+
+function transferOwnership(board, uid, name) {
+  if (!window.confirm(`Make ${name} the owner? You'll become an editor — only they can undo this.`)) return;
+  board.members[store.currentUser.uid] = "editor";
+  board.members[uid] = "owner";
+  saveState();
+  closeModal();
+  render();
+  showToast(`${name} is now the owner`);
 }
 
 function renderCreatePickers() {
@@ -270,7 +367,7 @@ function createBoard(name) {
     emoji: store.createDraft.emoji,
     accent: store.createDraft.accent,
     createdAt: new Date().toISOString(),
-    members: { [store.currentUser.uid]: "admin" },
+    members: { [store.currentUser.uid]: "owner" },
     memberProfiles: { [store.currentUser.uid]: currentProfile() },
     reads: {},
     games: [],
