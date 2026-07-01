@@ -109,6 +109,71 @@ exports.acceptInvite = onCall(async (request) => {
   return { boardId, boardName: info.boardName || "the board" };
 });
 
+// ---------- Owner-only member management (server-authoritative) ----------
+
+// Throws unless `uid` is the owner of `boardId` (accepts legacy admin/true).
+async function requireOwner(uid, boardId) {
+  const snap = await admin.database().ref(`boards/${boardId}/members/${uid}`).get();
+  const role = snap.val();
+  if (role !== "owner" && role !== "admin" && role !== true) {
+    throw new HttpsError("permission-denied", "Only the board owner can manage members.");
+  }
+}
+
+async function requireMember(boardId, targetUid) {
+  const snap = await admin.database().ref(`boards/${boardId}/members/${targetUid}`).get();
+  if (!snap.exists()) throw new HttpsError("not-found", "That person isn't a member of this board.");
+}
+
+// Owner sets a member's role to editor or member.
+exports.setMemberRole = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const { boardId, targetUid, role } = request.data || {};
+  if (!boardId || !targetUid || !["editor", "member"].includes(role)) {
+    throw new HttpsError("invalid-argument", "boardId, targetUid, and a valid role are required.");
+  }
+  await requireOwner(request.auth.uid, boardId);
+  if (targetUid === request.auth.uid) {
+    throw new HttpsError("failed-precondition", "You can't change your own role.");
+  }
+  await requireMember(boardId, targetUid);
+  await admin.database().ref(`boards/${boardId}/members/${targetUid}`).set(role);
+  return { ok: true };
+});
+
+// Owner hands ownership to another member and becomes an editor.
+exports.transferOwnership = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const { boardId, targetUid } = request.data || {};
+  if (!boardId || !targetUid) throw new HttpsError("invalid-argument", "boardId and targetUid are required.");
+  await requireOwner(request.auth.uid, boardId);
+  if (targetUid === request.auth.uid) throw new HttpsError("failed-precondition", "You're already the owner.");
+  await requireMember(boardId, targetUid);
+  await admin.database().ref().update({
+    [`boards/${boardId}/members/${request.auth.uid}`]: "editor",
+    [`boards/${boardId}/members/${targetUid}`]: "owner"
+  });
+  return { ok: true };
+});
+
+// Owner removes a member and cleans up their profile, reads, and board pointer.
+exports.removeMember = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const { boardId, targetUid } = request.data || {};
+  if (!boardId || !targetUid) throw new HttpsError("invalid-argument", "boardId and targetUid are required.");
+  await requireOwner(request.auth.uid, boardId);
+  if (targetUid === request.auth.uid) {
+    throw new HttpsError("failed-precondition", "Transfer ownership before leaving, or delete the board.");
+  }
+  await admin.database().ref().update({
+    [`boards/${boardId}/members/${targetUid}`]: null,
+    [`boards/${boardId}/memberProfiles/${targetUid}`]: null,
+    [`boards/${boardId}/reads/${targetUid}`]: null,
+    [`userBoards/${targetUid}/${boardId}`]: null
+  });
+  return { ok: true };
+});
+
 // Sends an invite email when a new invite record is created.
 exports.sendInviteEmail = onValueCreated(
   {

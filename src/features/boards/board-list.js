@@ -14,6 +14,11 @@ import {
 import { initialsFor, formatShortDate, sortSchedule } from "../../utils/format.js";
 import { EMOJI_OPTIONS, ACCENT_OPTIONS, ROLE_LABELS, ASSIGNABLE_ROLES } from "../../utils/constants.js";
 import { deleteBoard } from "../../services/boards-repository.js";
+import {
+  updateMemberRole,
+  transferBoardOwnership,
+  removeBoardMember
+} from "../../services/invites-repository.js";
 import { openModal, closeModal, openBoard, goDashboard, showToast } from "../shell/shell.js";
 
 // ---- shared avatar helper ----
@@ -299,36 +304,55 @@ function memberRow(board, uid) {
   return row;
 }
 
-function setMemberRole(board, uid, role) {
-  board.members[uid] = role;
-  saveState();
-  render();
-  showToast(`Updated ${plainName(board, uid)} to ${ROLE_LABELS[role]}`);
+// Role changes go through owner-validated Cloud Functions (admin SDK), not a
+// direct members write. We optimistically reflect the change locally; realtime
+// then confirms the authoritative state.
+async function setMemberRole(board, uid, role) {
+  try {
+    await updateMemberRole(store.services.functions, board.id, uid, role);
+    board.members[uid] = role;
+    renderMembers(board);
+    render();
+    showToast(`Updated ${plainName(board, uid)} to ${ROLE_LABELS[role]}`);
+  } catch (error) {
+    console.error("setMemberRole failed", error);
+    renderMembers(board); // reset the dropdown to the stored value
+    showToast(error?.message || "Couldn't update that role.");
+  }
 }
 
-function removeMember(board, uid, name) {
+async function removeMember(board, uid, name) {
   if (!window.confirm(`Remove ${name} from "${board.name}"? They'll lose access to this board.`)) {
-    renderMembers(board);
     return;
   }
-  delete board.members[uid];
-  if (board.memberProfiles) delete board.memberProfiles[uid];
-  if (board.reads) delete board.reads[uid];
-  board.memberIds = Object.keys(board.members);
-  saveState();
-  renderMembers(board);
-  render();
-  showToast(`Removed ${name}`);
+  try {
+    await removeBoardMember(store.services.functions, board.id, uid);
+    delete board.members[uid];
+    if (board.memberProfiles) delete board.memberProfiles[uid];
+    if (board.reads) delete board.reads[uid];
+    board.memberIds = Object.keys(board.members);
+    renderMembers(board);
+    render();
+    showToast(`Removed ${name}`);
+  } catch (error) {
+    console.error("removeMember failed", error);
+    showToast(error?.message || "Couldn't remove that member.");
+  }
 }
 
-function transferOwnership(board, uid, name) {
+async function transferOwnership(board, uid, name) {
   if (!window.confirm(`Make ${name} the owner? You'll become an editor — only they can undo this.`)) return;
-  board.members[store.currentUser.uid] = "editor";
-  board.members[uid] = "owner";
-  saveState();
-  closeModal();
-  render();
-  showToast(`${name} is now the owner`);
+  try {
+    await transferBoardOwnership(store.services.functions, board.id, uid);
+    board.members[store.currentUser.uid] = "editor";
+    board.members[uid] = "owner";
+    closeModal();
+    render();
+    showToast(`${name} is now the owner`);
+  } catch (error) {
+    console.error("transferOwnership failed", error);
+    showToast(error?.message || "Couldn't transfer ownership.");
+  }
 }
 
 function renderCreatePickers() {
